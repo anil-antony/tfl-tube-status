@@ -160,5 +160,8 @@ if tube_status_data:
 else:
     logger.warning("No data fetched from the API. Skipping final table update.")
 ```
+###Sample Output
+![Screenshot Title](Sample_Output.png)
+
 
 This notebook provides a robust and scalable way to fetch, process, and store Tube line status data from the TFL API using Databricks Community Edition.
