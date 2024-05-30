@@ -25,16 +25,17 @@ import logging
 from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
+from pyspark.sql.window import Window
 from pyspark.sql.types import StructType, StructField, StringType, ArrayType, TimestampType
 from time import sleep
 
-# Set up Logging
+#Set up Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tube_status_etl")
 
 api_url = "https://api.tfl.gov.uk/Line/Mode/tube/Status"
 
-# Retry configs
+#retry configs
 max_retries = 3
 retry_delay = 5
 
@@ -86,7 +87,9 @@ else:
 
 - **Description:** This step processes the raw data by parsing the JSON, extracting relevant fields, and performing data cleaning and de-duplication. The cleaned data is then written to a Silver Delta Lake table.
 - **Output:** Processed data is stored in a table named `silver_tube_status`.
+### Code:
 ```python
+
 if tube_status_data:
     silver_schema = ArrayType(StructType([
         StructField("name", StringType(), True),
@@ -96,7 +99,7 @@ if tube_status_data:
         ])), True)
     ]))
 
-    # Reading relevant details from raw data
+    #reading relevant details from raw data
     silver_df = (spark.table("bronze_tube_status")
                  .withColumn("parsed_data", from_json(col("raw_data"), silver_schema))
                  .selectExpr("current_timestamp", "inline(parsed_data)"))
@@ -108,10 +111,10 @@ if tube_status_data:
         col("lineStatuses")[0]["reason"].alias("disruption_reason")
     )
 
-    # De-Dup
+    #De-Dup
     silver_df = silver_df.dropDuplicates()
 
-    # Missing Values Handling
+    #Missing Values Handling
     silver_df = silver_df.filter(col("current_timestamp").isNotNull() & col("line").isNotNull())
     silver_df = silver_df.withColumn("status", when(col("status").isNull(), "unknown").otherwise(col("status")))
     silver_df = silver_df.withColumn("disruption_reason", 
@@ -132,7 +135,9 @@ else:
 
 - **Description:** This step merges the latest processed data into the final table `tube_line_status`. It ensures no duplicate entries by matching on `line` and `current_timestamp`.
 - **Output:** Latest tube status data is stored in the table `tube_line_status`.
-- spark.sql("""
+### Code:
+```python
+spark.sql("""
     CREATE TABLE IF NOT EXISTS tube_line_status (
     current_timestamp TIMESTAMP,
     line STRING,
