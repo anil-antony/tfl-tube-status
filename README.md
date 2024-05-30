@@ -61,3 +61,97 @@ for attempt in range(max_retries):
         else:
             logging.error("Max retries exceeded. Unable to fetch Tube status data.")
             break
+```
+### Step 2: Ingest Raw Data into Bronze Table
+
+- **Description:** This step creates a DataFrame from the fetched data and writes it to a Bronze Delta Lake table.
+- **Output:** Raw data is stored in a table named `bronze_tube_status`.
+### Code:
+```python
+if tube_status_data:
+    spark = SparkSession.builder.appName("TubeLineStatus").getOrCreate()
+    bronze_df = spark.createDataFrame([(json.dumps(tube_status_data),)], ["raw_data"])
+    bronze_df = bronze_df.withColumn("current_timestamp", current_timestamp_value)
+
+    bronze_table_name = "bronze_tube_status"
+    try:
+        bronze_df.write.mode("overwrite").format("delta").saveAsTable(bronze_table_name)
+        logger.info(f"Raw data ingested to Bronze Delta Lake table '{bronze_table_name}' successfully.")
+    except Exception as e:
+        logger.error(f"An error occurred while ingesting raw data to Bronze Delta Lake table '{bronze_table_name}': {e}")
+else:
+    logger.warning("No data fetched from TFL API. Skipping data ingestion.")
+```
+### Step 3: Clean, De-Dup, Transform Raw Data and Load Into Silver Table
+
+- **Description:** This step processes the raw data by parsing the JSON, extracting relevant fields, and performing data cleaning and de-duplication. The cleaned data is then written to a Silver Delta Lake table.
+- **Output:** Processed data is stored in a table named `silver_tube_status`.
+```python
+if tube_status_data:
+    silver_schema = ArrayType(StructType([
+        StructField("name", StringType(), True),
+        StructField("lineStatuses", ArrayType(StructType([
+            StructField("statusSeverityDescription", StringType(), True),
+            StructField("reason", StringType(), True)
+        ])), True)
+    ]))
+
+    # Reading relevant details from raw data
+    silver_df = (spark.table("bronze_tube_status")
+                 .withColumn("parsed_data", from_json(col("raw_data"), silver_schema))
+                 .selectExpr("current_timestamp", "inline(parsed_data)"))
+
+    silver_df = silver_df.select(
+        col("current_timestamp").cast(TimestampType()),
+        col("name").alias("line"),
+        col("lineStatuses")[0]["statusSeverityDescription"].alias("status"),
+        col("lineStatuses")[0]["reason"].alias("disruption_reason")
+    )
+
+    # De-Dup
+    silver_df = silver_df.dropDuplicates()
+
+    # Missing Values Handling
+    silver_df = silver_df.filter(col("current_timestamp").isNotNull() & col("line").isNotNull())
+    silver_df = silver_df.withColumn("status", when(col("status").isNull(), "unknown").otherwise(col("status")))
+    silver_df = silver_df.withColumn("disruption_reason", 
+                                    when(col("status") == "Good Service", "No disruption")
+                                    .otherwise(when(col("disruption_reason").isNull(), "unknown")
+                                                .otherwise(col("disruption_reason"))))
+
+    silver_table_name = "silver_tube_status"
+    try:
+        silver_df.write.mode("overwrite").format("delta").saveAsTable(silver_table_name)
+        logger.info(f"Processed data loaded to Silver Delta Lake table '{silver_table_name}' successfully.")
+    except Exception as e:
+        logger.error(f"An error occurred while loading processed data to Silver Delta Lake table '{silver_table_name}': {e}")
+else:
+    logger.warning("No data fetched from the API. Skipping data transformation and loading.")
+```
+### Step 4: Load the Latest Tube Status into Final Table
+
+- **Description:** This step merges the latest processed data into the final table `tube_line_status`. It ensures no duplicate entries by matching on `line` and `current_timestamp`.
+- **Output:** Latest tube status data is stored in the table `tube_line_status`.
+- spark.sql("""
+    CREATE TABLE IF NOT EXISTS tube_line_status (
+    current_timestamp TIMESTAMP,
+    line STRING,
+    status STRING,
+    disruption_reason STRING)
+""")
+if tube_status_data:
+    try:
+        spark.sql("""
+            MERGE INTO tube_line_status AS target
+            USING silver_tube_status AS source
+            ON target.line = source.line AND target.current_timestamp = source.current_timestamp
+            WHEN NOT MATCHED THEN
+                INSERT (current_timestamp, line, status, disruption_reason)
+                VALUES (source.current_timestamp, source.line, source.status, source.disruption_reason)
+        """)
+        logger.info("Latest Tube Status loaded into final table 'tube_line_status' successfully.")
+    except Exception as e:
+        logger.error("An error occurred while loading data into the final table 'tube_line_status':", e)
+else:
+    logger.warning("No data fetched from the API. Skipping final table update.")
+```
