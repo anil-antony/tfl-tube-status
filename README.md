@@ -2,7 +2,7 @@
 
 ## Summary
 
-This notebook fetches the latest Tube line reports from the TFL Open API and processes the data to store it incrementally in Databricks SQL Table. The notebook performs the following steps:
+This notebook fetches the latest Tube line reports from the TFL Open API and processes the data to store it incrementally in Databricks SQL Table with columns `current_timestamp`, `line`, `status`, and `disruption_reason` . The notebook performs the following steps:
 
 1. Fetches the latest Tube status from the TFL Open API.
 2. Ingests the raw data into a Bronze Delta Lake table.
