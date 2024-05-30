@@ -9,12 +9,13 @@ This notebook fetches the latest Tube line reports from the TFL Open API and pro
 3. Cleans, de-duplicates, and transforms the raw data, and then loads it into a Silver Delta Lake table.
 4. Merges the latest Tube status data into a final table, ensuring no duplicate entries based on `line` and `current_timestamp`.
 
+- **Error Handling:** Standard error handling is implemented to catch and log any exceptions that may occur during the process. It includes retry logic with a maximum of 3 retries and a delay of 5 seconds between retries for server errors (500, 502, 503, 504)
+
 ## Step-by-Step Explanation
 
 ### Step 1: Fetch Latest Tube Status from TFL API
 
 - **Description:** This step fetches the latest Tube status from the TFL Open API using the `requests` library.
-- **Error Handling:** Standard error handling is implemented to catch and log any exceptions that may occur during the process. It includes retry logic with a maximum of 3 retries and a delay of 5 seconds between retries for server errors (500, 502, 503, 504)
 - **Output:** The fetched data is stored in a variable `tube_status_data`.
 
 ### Code:
