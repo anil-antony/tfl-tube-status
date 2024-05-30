@@ -2,7 +2,7 @@
 
 ## Summary
 
-This notebook fetches the latest Tube line reports from the TFL Open API and processes the data to store it in Databricks SQL Table. The notebook performs the following steps:
+This notebook fetches the latest Tube line reports from the TFL Open API and processes the data to store it incrementally in Databricks SQL Table. The notebook performs the following steps:
 
 1. Fetches the latest Tube status from the TFL Open API.
 2. Ingests the raw data into a Bronze Delta Lake table.
@@ -68,7 +68,7 @@ for attempt in range(max_retries):
 ### Step 2: Ingest Raw Data into Bronze Table
 
 - **Description:** This step creates a DataFrame from the fetched data and writes it to a Bronze Delta Lake table.
-- **Output:** Raw data is stored in a table named `bronze_tube_status`.
+- **Output:** Raw data is stored in a table named `bronze_tube_status`. This data serves as the source for further transformations and processing.
 ### Code:
 ```python
 if tube_status_data:
@@ -135,8 +135,8 @@ else:
 ```
 ### Step 4: Load the Latest Tube Status into Final Table
 
-- **Description:** This step merges the latest processed data into the final table `tube_line_status`. It ensures no duplicate entries by matching on `line` and `current_timestamp`.
-- **Output:** Latest tube status data is stored in the table `tube_line_status`.
+- **Description:** This step merges the latest processed data into the final table `tube_line_status`. This process ensures that only new records are inserted based on the combination of `line` and `current_timestamp`, avoiding any duplicate entries.
+- **Output:** Latest tube status data is loaded in the table `tube_line_status`.
 ### Code:
 ```python
 spark.sql("""
